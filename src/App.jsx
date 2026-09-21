@@ -691,6 +691,35 @@ function getCityReadiness(city) {
   };
 }
 
+function getCityAverageScore(city, dailyGames) {
+  if (!city || !Array.isArray(dailyGames)) {
+    return null;
+  }
+
+  const matchingGames = dailyGames.filter((game) => {
+    if (!game || !game.levels) {
+      return false;
+    }
+
+    return Object.values(game.levels).includes(city.id);
+  });
+
+  if (matchingGames.length === 0) {
+    return null;
+  }
+
+  const validScores = matchingGames
+    .map((game) => Number(game.averageScore))
+    .filter((score) => Number.isFinite(score));
+
+  if (validScores.length === 0) {
+    return null;
+  }
+
+  const average = validScores.reduce((sum, score) => sum + score, 0) / validScores.length;
+  return Number(average.toFixed(1));
+}
+
 function getRandomClueForCategory(city, categoryId) {
   const cluePool = city.clues?.[categoryId] ?? [];
   if (cluePool.length === 0) {
@@ -873,6 +902,7 @@ function StudioPage() {
 
   const selectedCity =
     cities.find((city) => city.id === selectedCityId) ?? visibleCities[0] ?? null;
+  const selectedCityAverageScore = selectedCity ? getCityAverageScore(selectedCity, dailyGames) : null;
 
   useEffect(() => {
     let isActive = true;
@@ -1134,28 +1164,6 @@ function StudioPage() {
 
     setIsEditingCityDetails(false);
     setCityDetailError('');
-  }
-
-  function handleAverageScoreChange(value) {
-    if (!selectedCity) {
-      return;
-    }
-
-    const numericValue = Number(value);
-    const nextAverageScore = Number.isFinite(numericValue)
-      ? Math.min(100, Math.max(0, numericValue))
-      : null;
-
-    setCities((previousCities) =>
-      previousCities.map((city) =>
-        city.id === selectedCity.id
-          ? {
-              ...city,
-              averageScore: nextAverageScore,
-            }
-          : city
-      )
-    );
   }
 
   async function handleClueFileUpload(category, event) {
@@ -1888,13 +1896,10 @@ function StudioPage() {
                   >
                     <td>
                       <div className="city-name-cell">
-                        <span>{city.name}</span>
+                        <span className={getCityReadiness(city).ready ? 'city-name-ready' : 'city-name-not-ready'}>{city.name}</span>
                         {city.gameLevels?.length > 0 && (
                           <small>{city.gameLevels.join(', ')}</small>
                         )}
-                        <small className="city-average-score-display">
-                          Avg score: {city.averageScore != null ? `${city.averageScore}%` : '—'}
-                        </small>
                       </div>
                     </td>
                     <td>{city.totalUses}</td>
@@ -2023,18 +2028,9 @@ function StudioPage() {
                   </div>
 
                   <div className="city-average-score-box">
-                    <label htmlFor="city-average-score">Average score</label>
-                    <div className="city-average-score-input-wrap">
-                      <input
-                        id="city-average-score"
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="1"
-                        value={selectedCity.averageScore ?? 0}
-                        onChange={(event) => handleAverageScoreChange(event.target.value)}
-                      />
-                      <span>%</span>
+                    <label>Average score</label>
+                    <div className="city-average-score-input-wrap city-average-score-readonly">
+                      <span>{selectedCityAverageScore != null ? `${selectedCityAverageScore}%` : 'No live data'}</span>
                     </div>
                   </div>
 
@@ -2538,7 +2534,15 @@ function GamePage() {
                   <span>Swap</span>
                 </button>
                 <small className="power-up-note">
-                  {swapUsed ? 'Used' : swapStep === 'select' ? 'Choose a category' : swapStep === 'replace' ? 'Choose replacement' : 'Available Levels 2-5'}
+                  {swapUsed
+                    ? 'Used'
+                    : swapStep === 'select'
+                      ? 'Choose a category'
+                      : swapStep === 'replace'
+                        ? 'Choose replacement'
+                        : currentRound === 0
+                          ? 'All clues visible on Level 1'
+                          : 'Swap for a new category'}
                 </small>
                 {swapStep === 'select' && (
                   <small className="power-up-choice-hint">Choose a category to swap</small>
@@ -2593,7 +2597,7 @@ function GamePage() {
                   <span>Shuffle</span>
                 </button>
                 <small className="power-up-note">
-                  {shuffleUsed ? 'Used' : shuffleStep === 'select' ? 'Waiting for choice' : 'Available'}
+                  {shuffleUsed ? 'Used' : 'Shuffle a category for a new clue'}
                 </small>
                 {shuffleStep === 'select' && (
                   <small className="power-up-choice-hint">Choose a category to reshuffle</small>

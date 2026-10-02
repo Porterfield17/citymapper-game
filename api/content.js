@@ -31,6 +31,7 @@ export default async function handler(request, response) {
       .maybeSingle();
 
     if (error) {
+      console.error('Could not load published game content:', error.code, error.message);
       return response.status(500).json({ error: 'Could not load published game content.' });
     }
 

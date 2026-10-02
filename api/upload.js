@@ -40,6 +40,7 @@ export default async function handler(request, response) {
     });
 
   if (error) {
+    console.error('Could not store clue image:', error.name, error.message);
     return response.status(500).json({ error: 'Could not store this clue image.' });
   }
 

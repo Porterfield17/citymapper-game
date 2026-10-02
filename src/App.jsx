@@ -666,6 +666,53 @@ function hasUploadedImage(clue) {
   return isValidClueImage(clue?.image);
 }
 
+async function uploadLegacyClueImages(cities, uploadedImages) {
+  let changed = false;
+
+  const nextCities = await Promise.all(cities.map(async (city) => {
+    const clues = { ...(city.clues ?? {}) };
+    let cityChanged = false;
+
+    await Promise.all(Object.entries(clues).map(async ([category, entries]) => {
+      if (!Array.isArray(entries)) {
+        return;
+      }
+
+      clues[category] = await Promise.all(entries.map(async (clue) => {
+        const image = clue?.image;
+        if (
+          typeof image !== 'string'
+          || !/^data:image\/(?:jpeg|png|webp|gif);base64,/.test(image)
+        ) {
+          return clue;
+        }
+
+        let upload = uploadedImages.get(image);
+        if (!upload) {
+          upload = uploadClueImage(image);
+          uploadedImages.set(image, upload);
+        }
+
+        let imageUrl;
+        try {
+          imageUrl = await upload;
+        } catch (error) {
+          uploadedImages.delete(image);
+          throw error;
+        }
+
+        cityChanged = true;
+        changed = true;
+        return { ...clue, image: imageUrl };
+      }));
+    }));
+
+    return cityChanged ? { ...city, clues } : city;
+  }));
+
+  return { cities: nextCities, changed };
+}
+
 function getValidCluesForCategory(city, categoryId) {
   if (!city || !city.clues) {
     return [];
@@ -980,6 +1027,7 @@ function StudioWorkspace({ onLogout }) {
   const [isStorageHydrated, setIsStorageHydrated] = useState(false);
   const skipNextCloudSave = useRef(false);
   const cloudSaveQueue = useRef(Promise.resolve());
+  const uploadedLegacyImages = useRef(new Map());
   const latestContent = useRef({ cities, dailyGames });
 
   useEffect(() => {
@@ -1058,7 +1106,7 @@ function StudioWorkspace({ onLogout }) {
 
         setCities(publishedContent?.cities ?? mergedCities);
         setDailyGames(publishedContent?.dailyGames ?? mergedDailyGames);
-        skipNextCloudSave.current = Boolean(publishedContent);
+        skipNextCloudSave.current = false;
       } catch (error) {
         if (isActive) {
           setCities(legacyCities);
@@ -1101,12 +1149,21 @@ function StudioWorkspace({ onLogout }) {
         return;
       }
 
-      const content = { cities, dailyGames };
       cloudSaveQueue.current = cloudSaveQueue.current
         .catch(() => {})
         .then(async () => {
           try {
-            await publishContent(content);
+            const { cities: publishedCities, changed } = await uploadLegacyClueImages(
+              cities,
+              uploadedLegacyImages.current,
+            );
+
+            if (changed) {
+              skipNextCloudSave.current = true;
+              setCities(publishedCities);
+            }
+
+            await publishContent({ cities: publishedCities, dailyGames });
             if (savedCities && savedGames) {
               setStorageWarning('');
             }

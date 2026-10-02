@@ -1,7 +1,7 @@
 import './App.css';
 import 'leaflet/dist/leaflet.css';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Route, Routes } from 'react-router-dom';
 import {
   MapContainer,
@@ -10,6 +10,15 @@ import {
   Marker,
   Polyline,
 } from 'react-leaflet';
+import {
+  getAdminSession,
+  getPublishedContent,
+  loginAdmin,
+  logoutAdmin,
+  publishContent,
+  subscribeToPublishedContent,
+  uploadClueImage,
+} from './contentSync';
 
 const gameDay1 = [
   {
@@ -116,6 +125,10 @@ const DAILY_GAMES_STORAGE_KEY = 'citymapper-daily-games-v1';
 const DAILY_GAMES_STORAGE_BACKUP_KEY = `${DAILY_GAMES_STORAGE_KEY}-backup`;
 const INDEXED_DB_NAME = 'citymapper-db';
 const INDEXED_DB_VERSION = 2;
+
+function areJsonEqual(valueA, valueB) {
+  return JSON.stringify(valueA) === JSON.stringify(valueB);
+}
 
 function makeSvgDataUrl(label, accent, textColor = '#111827') {
   const safeLabel = String(label)
@@ -853,10 +866,119 @@ function GuessMarker({ setGuess, disabled }) {
 }
 
 function StudioPage() {
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [adminName, setAdminName] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [isSubmittingLogin, setIsSubmittingLogin] = useState(false);
+
+  useEffect(() => {
+    let isActive = true;
+
+    getAdminSession()
+      .then(({ authenticated }) => {
+        if (isActive) {
+          setIsAuthenticated(authenticated);
+        }
+      })
+      .catch((error) => {
+        if (isActive) {
+          setAuthError(error.message);
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsCheckingSession(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  async function handleAdminLogin(event) {
+    event.preventDefault();
+    setIsSubmittingLogin(true);
+    setAuthError('');
+
+    try {
+      await loginAdmin(adminName, adminPassword);
+      setAdminPassword('');
+      setIsAuthenticated(true);
+    } catch (error) {
+      setAuthError(error.message);
+    } finally {
+      setIsSubmittingLogin(false);
+    }
+  }
+
+  async function handleAdminLogout() {
+    await logoutAdmin().catch(() => {});
+    setAdminPassword('');
+    setIsAuthenticated(false);
+  }
+
+  if (isCheckingSession) {
+    return (
+      <main className="studio-login-page">
+        <p>Checking admin session…</p>
+      </main>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <StudioWorkspace onLogout={handleAdminLogout} />;
+  }
+
+  return (
+    <main className="studio-login-page">
+      <section className="studio-login-panel">
+        <p className="eyebrow">CITYMAPPER STUDIO</p>
+        <h1>Admin sign in</h1>
+        <form className="studio-form" onSubmit={handleAdminLogin}>
+          <label htmlFor="admin-name">Admin name</label>
+          <input
+            id="admin-name"
+            type="text"
+            autoComplete="username"
+            value={adminName}
+            onChange={(event) => setAdminName(event.target.value)}
+            required
+          />
+          <label htmlFor="admin-password">Password</label>
+          <input
+            id="admin-password"
+            type="password"
+            autoComplete="current-password"
+            value={adminPassword}
+            onChange={(event) => setAdminPassword(event.target.value)}
+            required
+          />
+          {authError && <p className="field-error" role="alert">{authError}</p>}
+          <button type="submit" className="primary-button" disabled={isSubmittingLogin}>
+            {isSubmittingLogin ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
+        <Link to="/" className="inline-link">Return to game</Link>
+      </section>
+    </main>
+  );
+}
+
+function StudioWorkspace({ onLogout }) {
   const [activeTab, setActiveTab] = useState('City Database');
   const [cities, setCities] = useState([]);
   const [dailyGames, setDailyGames] = useState([]);
   const [isStorageHydrated, setIsStorageHydrated] = useState(false);
+  const skipNextCloudSave = useRef(false);
+  const cloudSaveQueue = useRef(Promise.resolve());
+  const latestContent = useRef({ cities, dailyGames });
+
+  useEffect(() => {
+    latestContent.current = { cities, dailyGames };
+  }, [cities, dailyGames]);
   const [selectedCityId, setSelectedCityId] = useState(null);
   const [showCityForm, setShowCityForm] = useState(false);
   const [newCityName, setNewCityName] = useState('');
@@ -915,9 +1037,10 @@ function StudioPage() {
 
     async function loadStoredData() {
       try {
-        const [storedCities, storedDailyGames] = await Promise.all([
+        const [storedCities, storedDailyGames, publishedContent] = await Promise.all([
           readStoredCities(),
           readStoredDailyGames(),
+          getPublishedContent().catch(() => null),
         ]);
 
         if (!isActive) {
@@ -927,12 +1050,14 @@ function StudioPage() {
         const mergedCities = mergeStoredEntries(storedCities, legacyCities);
         const mergedDailyGames = mergeStoredEntries(storedDailyGames, legacyDailyGames);
 
-        setCities(mergedCities);
-        setDailyGames(mergedDailyGames);
+        setCities(publishedContent?.cities ?? mergedCities);
+        setDailyGames(publishedContent?.dailyGames ?? mergedDailyGames);
+        skipNextCloudSave.current = Boolean(publishedContent);
       } catch (error) {
         if (isActive) {
           setCities(legacyCities);
           setDailyGames(legacyDailyGames);
+          skipNextCloudSave.current = false;
         }
       } finally {
         if (isActive) {
@@ -953,30 +1078,60 @@ function StudioPage() {
       return;
     }
 
+    const shouldPublish = !skipNextCloudSave.current;
+    skipNextCloudSave.current = false;
+
     void (async () => {
-      const savedCities = await persistJsonToStorage(CITY_STORAGE_KEY, cities);
-      if (savedCities) {
-        setStorageWarning('');
-      } else {
+      const [savedCities, savedGames] = await Promise.all([
+        persistJsonToStorage(CITY_STORAGE_KEY, cities),
+        persistJsonToStorage(DAILY_GAMES_STORAGE_KEY, dailyGames),
+      ]);
+
+      if (!savedCities || !savedGames) {
         setStorageWarning('Storage is full. Remove large photos or export data to keep adding clues.');
       }
+
+      if (!shouldPublish) {
+        return;
+      }
+
+      const content = { cities, dailyGames };
+      cloudSaveQueue.current = cloudSaveQueue.current
+        .catch(() => {})
+        .then(async () => {
+          try {
+            await publishContent(content);
+            if (savedCities && savedGames) {
+              setStorageWarning('');
+            }
+          } catch (error) {
+            setStorageWarning(`Live publish failed: ${error.message}`);
+          }
+        });
     })();
-  }, [cities, isStorageHydrated]);
+  }, [cities, dailyGames, isStorageHydrated]);
 
   useEffect(() => {
-    if (!isStorageHydrated || typeof window === 'undefined') {
-      return;
+    if (!isStorageHydrated) {
+      return undefined;
     }
 
-    void (async () => {
-      const savedGames = await persistJsonToStorage(DAILY_GAMES_STORAGE_KEY, dailyGames);
-      if (savedGames) {
-        setStorageWarning((previousWarning) => previousWarning || '');
-      } else {
-        setStorageWarning('Storage is full. Remove large photos or export data to keep adding clues.');
+    return subscribeToPublishedContent((content) => {
+      const citiesChanged = !areJsonEqual(latestContent.current.cities, content.cities);
+      const gamesChanged = !areJsonEqual(latestContent.current.dailyGames, content.dailyGames);
+      if (!citiesChanged && !gamesChanged) {
+        return;
       }
-    })();
-  }, [dailyGames, isStorageHydrated]);
+
+      skipNextCloudSave.current = true;
+      if (citiesChanged) {
+        setCities(content.cities);
+      }
+      if (gamesChanged) {
+        setDailyGames(content.dailyGames);
+      }
+    });
+  }, [isStorageHydrated]);
 
   useEffect(() => {
     if (!selectedCityId && orderedCities.length > 0) {
@@ -1174,12 +1329,13 @@ function StudioPage() {
 
     try {
       const compressedImage = await compressImageDataUrl(file);
+      const publishedImage = await uploadClueImage(compressedImage);
       setUploadError('');
       setCategoryDrafts((previousDrafts) => ({
         ...previousDrafts,
         [category]: {
           ...previousDrafts[category],
-          image: compressedImage,
+          image: publishedImage,
         },
       }));
     } catch (error) {
@@ -1578,7 +1734,10 @@ function StudioPage() {
               <p className="eyebrow">FRAMEWORK STUDIO</p>
               <h2>Studio</h2>
             </div>
-            <Link to="/" className="studio-return-link">Game</Link>
+            <div className="studio-header-actions">
+              <Link to="/" className="studio-return-link">Game</Link>
+              <button type="button" className="studio-logout-button" onClick={onLogout}>Sign out</button>
+            </div>
           </div>
 
           {renderStudioTabs()}
@@ -1764,7 +1923,10 @@ function StudioPage() {
               <p className="eyebrow">FRAMEWORK STUDIO</p>
               <h2>Studio</h2>
             </div>
-            <Link to="/" className="studio-return-link">Game</Link>
+            <div className="studio-header-actions">
+              <Link to="/" className="studio-return-link">Game</Link>
+              <button type="button" className="studio-logout-button" onClick={onLogout}>Sign out</button>
+            </div>
           </div>
 
           {renderStudioTabs()}
@@ -1789,7 +1951,10 @@ function StudioPage() {
             <p className="eyebrow">FRAMEWORK STUDIO</p>
             <h2>Studio</h2>
           </div>
-          <Link to="/" className="studio-return-link">Game</Link>
+          <div className="studio-header-actions">
+            <Link to="/" className="studio-return-link">Game</Link>
+            <button type="button" className="studio-logout-button" onClick={onLogout}>Sign out</button>
+          </div>
         </div>
 
         {renderStudioTabs()}
@@ -2177,6 +2342,11 @@ function GamePage() {
   const [cities, setCities] = useState([]);
   const [dailyGames, setDailyGames] = useState([]);
   const [isStorageHydrated, setIsStorageHydrated] = useState(false);
+  const latestContent = useRef({ cities, dailyGames });
+
+  useEffect(() => {
+    latestContent.current = { cities, dailyGames };
+  }, [cities, dailyGames]);
   const [guess, setGuess] = useState(null);
   const [scores, setScores] = useState([]);
   const [roundResults, setRoundResults] = useState([]);
@@ -2215,9 +2385,10 @@ function GamePage() {
 
     async function loadStoredData() {
       try {
-        const [storedCities, storedDailyGames] = await Promise.all([
+        const [storedCities, storedDailyGames, publishedContent] = await Promise.all([
           readStoredCities(),
           readStoredDailyGames(),
+          getPublishedContent().catch(() => null),
         ]);
 
         if (!isActive) {
@@ -2227,12 +2398,16 @@ function GamePage() {
         const mergedCities = mergeStoredEntries(storedCities, legacyCities);
         const mergedDailyGames = mergeStoredEntries(storedDailyGames, legacyDailyGames);
 
-        setCities(mergedCities);
-        setDailyGames(mergedDailyGames);
+        setCities(publishedContent?.cities ?? mergedCities);
+        setDailyGames(publishedContent?.dailyGames ?? mergedDailyGames);
       } catch (error) {
         if (isActive) {
           setCities(legacyCities);
           setDailyGames(legacyDailyGames);
+        }
+      } finally {
+        if (isActive) {
+          setIsStorageHydrated(true);
         }
       }
     }
@@ -2243,6 +2418,21 @@ function GamePage() {
       isActive = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isStorageHydrated) {
+      return undefined;
+    }
+
+    return subscribeToPublishedContent((content) => {
+      if (!areJsonEqual(latestContent.current.cities, content.cities)) {
+        setCities(content.cities);
+      }
+      if (!areJsonEqual(latestContent.current.dailyGames, content.dailyGames)) {
+        setDailyGames(content.dailyGames);
+      }
+    });
+  }, [isStorageHydrated]);
 
   useEffect(() => {
     if (!isStorageHydrated || typeof window === 'undefined') {

@@ -1,4 +1,32 @@
-# React + Vite
+# CityMapper
+
+## Local development
+
+```sh
+npm install
+npm run dev
+```
+
+## Live publishing setup
+
+Production deploys automatically when a commit is pushed to the `main` branch on GitHub. The Vercel project is connected to `Porterfield17/citymapper-game` and serves `citymappergame.vercel.app`.
+
+Studio content is stored in Supabase and delivered to players through Supabase Realtime. Clue images are stored in a public-read bucket; only the server-side admin session can upload them. To enable it:
+
+1. Create a Supabase project and run [`supabase/schema.sql`](supabase/schema.sql) in its SQL editor.
+2. Copy `.env.example` to `.env.local` for local development and fill in the Supabase URL, publishable key, server-only secret key, admin name, admin password, and a long random session secret.
+3. Add all seven variables to the Vercel project for Production and Preview, then redeploy.
+4. Open `/studio` and sign in with the configured admin name and password. Existing content in that browser is imported to Supabase when the Studio first loads; after that, Studio edits publish automatically and connected game clients receive them live.
+
+Keep `SUPABASE_SECRET_KEY`, `ADMIN_PASSWORD`, and `ADMIN_SESSION_SECRET` server-side only. Do not prefix them with `VITE_` or commit `.env.local`.
+
+If Studio content was previously saved in a different browser, export/copy that content into the browser used for the initial admin sign-in before connecting Supabase; browser-local data is not uploaded from other devices automatically.
+
+## Production build
+
+```sh
+npm run build
+```
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 

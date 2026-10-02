@@ -125,6 +125,12 @@ const DAILY_GAMES_STORAGE_KEY = 'citymapper-daily-games-v1';
 const DAILY_GAMES_STORAGE_BACKUP_KEY = `${DAILY_GAMES_STORAGE_KEY}-backup`;
 const INDEXED_DB_NAME = 'citymapper-db';
 const INDEXED_DB_VERSION = 2;
+const PUBLIC_CLUE_IMAGE_PREFIX = 'https://zsborwifgvukydppitwb.supabase.co/storage/v1/object/public/citymapper-clues/';
+
+function isValidClueImage(image) {
+  return typeof image === 'string'
+    && (image.startsWith('data:image/') || image.startsWith(PUBLIC_CLUE_IMAGE_PREFIX));
+}
 
 function areJsonEqual(valueA, valueB) {
   return JSON.stringify(valueA) === JSON.stringify(valueB);
@@ -337,7 +343,7 @@ function hasUserCreatedCityData(entries) {
 
     const hasCustomCityName = !isGeneratedDefaultCityName(city.name);
     const hasImageData = Object.values(city.clues ?? {}).some((clues) =>
-      Array.isArray(clues) && clues.some((clue) => Boolean(clue?.image && clue.image.startsWith('data:image/')))
+      Array.isArray(clues) && clues.some((clue) => isValidClueImage(clue?.image))
     );
 
     return hasCustomCityName || hasImageData || (city.dailyGames ?? []).length > 0;
@@ -657,7 +663,7 @@ function createEmptyGameDraft() {
 }
 
 function hasUploadedImage(clue) {
-  return Boolean(clue?.image && typeof clue.image === 'string' && clue.image.startsWith('data:image/'));
+  return isValidClueImage(clue?.image);
 }
 
 function getValidCluesForCategory(city, categoryId) {
@@ -1359,7 +1365,7 @@ function StudioWorkspace({ onLogout }) {
 
     const draft = categoryDrafts[category];
     const trimmedCaption = draft.caption.trim();
-    const hasValidImage = Boolean(draft.image && typeof draft.image === 'string' && draft.image.startsWith('data:image/'));
+    const hasValidImage = isValidClueImage(draft.image);
 
     if (!trimmedCaption || !hasValidImage) {
       setUploadError('Clues can only be saved with a real uploaded image.');

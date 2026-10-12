@@ -29,6 +29,28 @@ create policy "Anyone can view published clue images"
   to public
   using (bucket_id = 'citymapper-clues');
 
+drop policy if exists "Admins can upload clue images" on storage.objects;
+create policy "Admins can upload clue images"
+  on storage.objects
+  for insert
+  to authenticated
+  with check (bucket_id = 'citymapper-clues');
+
+drop policy if exists "Admins can update clue images" on storage.objects;
+create policy "Admins can update clue images"
+  on storage.objects
+  for update
+  to authenticated
+  using (bucket_id = 'citymapper-clues')
+  with check (bucket_id = 'citymapper-clues');
+
+drop policy if exists "Admins can delete clue images" on storage.objects;
+create policy "Admins can delete clue images"
+  on storage.objects
+  for delete
+  to authenticated
+  using (bucket_id = 'citymapper-clues');
+
 do $$
 begin
   if not exists (

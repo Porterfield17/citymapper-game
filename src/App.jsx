@@ -125,11 +125,21 @@ const DAILY_GAMES_STORAGE_KEY = 'citymapper-daily-games-v1';
 const DAILY_GAMES_STORAGE_BACKUP_KEY = `${DAILY_GAMES_STORAGE_KEY}-backup`;
 const INDEXED_DB_NAME = 'citymapper-db';
 const INDEXED_DB_VERSION = 2;
-const PUBLIC_CLUE_IMAGE_PREFIX = 'https://zsborwifgvukydppitwb.supabase.co/storage/v1/object/public/citymapper-clues/';
 
 function isValidClueImage(image) {
-  return typeof image === 'string'
-    && (image.startsWith('data:image/') || image.startsWith(PUBLIC_CLUE_IMAGE_PREFIX));
+  if (typeof image !== 'string') {
+    return false;
+  }
+
+  if (image.startsWith('data:image/')) {
+    return true;
+  }
+
+  try {
+    return new URL(image).protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 function areJsonEqual(valueA, valueB) {

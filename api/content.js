@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { hasAdminSession } from '../src/server/adminSession.js';
 
 function getDatabase() {
-  const url = process.env.SUPABASE_URL ?? 'https://zsborwifgvukydppitwb.supabase.co';
+  const url = process.env.SUPABASE_URL;
   const secretKey = process.env.SUPABASE_SECRET_KEY;
   return url && secretKey
     ? createClient(url, secretKey, {

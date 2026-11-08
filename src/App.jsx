@@ -587,7 +587,7 @@ async function persistJsonToStorage(key, value) {
   }
 }
 
-function compressImageDataUrl(file, maxDimension = 640, quality = 0.42) {
+function compressImageDataUrl(file) {
   return new Promise((resolve, reject) => {
     if (!file) {
       reject(new Error('No image file was selected.'));
@@ -611,14 +611,16 @@ function compressImageDataUrl(file, maxDimension = 640, quality = 0.42) {
       const image = new Image();
       image.onload = () => {
         const attempts = [
-          { maxDimension, quality },
-          { maxDimension: 520, quality: 0.32 },
-          { maxDimension: 420, quality: 0.24 },
+          { maxDimension: 1200, quality: 0.82 },
+          { maxDimension: 1080, quality: 0.76 },
+          { maxDimension: 960, quality: 0.7 },
+          { maxDimension: 840, quality: 0.64 },
         ];
+        const maxEncodedLength = 800000;
 
         const tryRender = (attemptIndex) => {
           const attempt = attempts[attemptIndex];
-          const squareSize = Math.min(attempt.maxDimension, 800);
+          const squareSize = Math.min(attempt.maxDimension, 1200);
           const scale = Math.min(squareSize / image.width, squareSize / image.height);
           const drawWidth = Math.max(1, Math.round(image.width * scale));
           const drawHeight = Math.max(1, Math.round(image.height * scale));
@@ -629,7 +631,7 @@ function compressImageDataUrl(file, maxDimension = 640, quality = 0.42) {
 
           const context = canvas.getContext('2d');
           if (!context) {
-            resolve(source);
+            reject(new Error('This image could not be optimized in this browser.'));
             return;
           }
 
@@ -644,8 +646,13 @@ function compressImageDataUrl(file, maxDimension = 640, quality = 0.42) {
           );
 
           const output = canvas.toDataURL('image/jpeg', attempt.quality);
-          if (output.length > 220000 && attemptIndex < attempts.length - 1) {
-            tryRender(attemptIndex + 1);
+          if (output.length > maxEncodedLength) {
+            if (attemptIndex < attempts.length - 1) {
+              tryRender(attemptIndex + 1);
+              return;
+            }
+
+            reject(new Error('This image could not be compressed enough to upload.'));
             return;
           }
 
@@ -2354,7 +2361,22 @@ function StudioWorkspace({ onLogout }) {
                     {uploadError && <p className="field-error">{uploadError}</p>}
 
                     {categoryDrafts[id]?.image && (
-                      <img src={categoryDrafts[id].image} alt={`${label} preview`} className="clue-preview" />
+                      <div className="game-clue-preview">
+                        <p className="game-clue-preview-label">Game preview</p>
+                        <div className="clues clues--single">
+                          <div className="clue">
+                            <strong>{getCategoryLabel(id)}</strong>
+                            <img
+                              src={categoryDrafts[id].image}
+                              alt={categoryDrafts[id].caption?.trim() || `${label} preview`}
+                              className="game-clue-image"
+                            />
+                            <span className="game-clue-caption">
+                              {categoryDrafts[id].caption?.trim() || 'Clue caption'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     )}
 
                     <button type="button" className="primary-button small-button" onClick={() => handleAddClueForCategory(id)}>

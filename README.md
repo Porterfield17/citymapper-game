@@ -18,6 +18,19 @@ Studio content is stored in Supabase and delivered to players through Supabase R
 3. Add all seven variables to the Vercel project for Production and Preview, then redeploy.
 4. Open `/studio` and sign in with the configured admin name and password. Existing content in that browser is imported to Supabase when the Studio first loads; after that, Studio edits publish automatically and connected game clients receive them live.
 
+Published content is snapshotted before every change or deletion in `public.game_content_revisions`. Clue images are stored as separate objects and are not deleted when content is updated. To restore a snapshot, replace `REVISION_ID` below with its `revision_id` and run the query in the Supabase SQL Editor:
+
+```sql
+insert into public.game_content (id, cities, daily_games, updated_at)
+select 'published', cities, daily_games, now()
+from public.game_content_revisions
+where revision_id = REVISION_ID
+on conflict (id) do update set
+	cities = excluded.cities,
+	daily_games = excluded.daily_games,
+	updated_at = excluded.updated_at;
+```
+
 Keep `SUPABASE_SECRET_KEY`, `ADMIN_PASSWORD`, and `ADMIN_SESSION_SECRET` server-side only. Do not prefix them with `VITE_` or commit `.env.local`.
 
 If Studio content was previously saved in a different browser, export/copy that content into the browser used for the initial admin sign-in before connecting Supabase; browser-local data is not uploaded from other devices automatically.

@@ -79,11 +79,6 @@ values ('citymapper-clues', 'citymapper-clues', true)
 on conflict (id) do update set public = true, file_size_limit = 3145728;
 
 drop policy if exists "Anyone can view published clue images" on storage.objects;
-create policy "Anyone can view published clue images"
-  on storage.objects
-  for select
-  to public
-  using (bucket_id = 'citymapper-clues');
 
 drop policy if exists "Admins can upload clue images" on storage.objects;
 create policy "Admins can upload clue images"

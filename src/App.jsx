@@ -1438,8 +1438,8 @@ function StudioWorkspace({ onLogout }) {
     }
 
     const draft = categoryDrafts[category];
-    const trimmedCaption = draft.caption.trim();
-    const hasValidImage = isValidClueImage(draft.image);
+    const trimmedCaption = typeof draft?.caption === 'string' ? draft.caption.trim() : '';
+    const hasValidImage = isValidClueImage(draft?.image);
 
     if (!trimmedCaption || !hasValidImage) {
       setUploadError('Clues can only be saved with a real uploaded image.');
@@ -1496,8 +1496,8 @@ function StudioWorkspace({ onLogout }) {
     setCategoryDrafts((previousDrafts) => ({
       ...previousDrafts,
       [category]: {
-        caption: clue.caption,
-        image: clue.image,
+        caption: typeof clue?.caption === 'string' ? clue.caption : '',
+        image: typeof clue?.image === 'string' ? clue.image : '',
         isEditing: true,
         clueId: clue.id,
       },

@@ -2365,7 +2365,7 @@ function StudioWorkspace({ onLogout }) {
                         <p className="game-clue-preview-label">Game preview</p>
                         <div className="clues clues--single">
                           <div className="clue">
-                            <strong>{getCategoryLabel(id)}</strong>
+                            <strong>{label}</strong>
                             <img
                               src={categoryDrafts[id].image}
                               alt={categoryDrafts[id].caption?.trim() || `${label} preview`}
